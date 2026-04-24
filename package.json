@@ -1,0 +1,22 @@
+{
+  "name": "trading-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "start": "node src/bot/index.js",
+    "test:risk": "node tests/riskGate.test.js",
+    "test:parser": "node tests/promptParser.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.91.0",
+    "dotenv": "^17.4.2",
+    "telegraf": "^4.16.3"
+  }
+}
