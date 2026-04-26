@@ -109,7 +109,7 @@ function checkExpiry({ expiry }) {
     name: 'Valid expiry (WEEKLY or MONTHLY)',
     passed,
     detail: `Expiry: ${expiry}`,
-    reason: passed ? null : `Expiry must be WEEKLY or MONTHLY. Got: "${expiry}"`,
+    reason: passed ? null : `Only WEEKLY expiry supported. Got: "${expiry}"`,
   };
 }
 
@@ -170,7 +170,7 @@ function checkPremiumRange({ premium }) {
 
 function checkSlDistance({ instrument, premium, slPremium }) {
   const inst    = instrument.toUpperCase();
-  const minPts  = C.MIN_SL_POINTS[inst];
+  const minPts = C.MIN_SL_POINTS[instrument?.toUpperCase()] || C.MIN_SL_POINTS.NIFTY;
   const slGap   = premium - slPremium;
   const passed  = slGap >= minPts;
   return {
@@ -244,10 +244,10 @@ function maxSlGap(instrument = 'NIFTY', lots = 1) {
   // by the daily loss limit and per-trade loss check in the gate.
 }
 
-// Minimum target premium to achieve 1:3 RR
+// Minimum target premium to achieve your fixed RR
 function minTarget(premium, slPremium) {
   const risk = premium - slPremium;
-  return premium + risk * C.MIN_REWARD_RATIO;
+  return Math.round(premium + risk * C.MIN_REWARD_RATIO);
 }
 
 module.exports = { runRiskGate, maxSlGap, minTarget };

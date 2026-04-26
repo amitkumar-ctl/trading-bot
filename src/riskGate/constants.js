@@ -13,9 +13,7 @@ const RISK_CONSTANTS = {
 
   // ── Instrument ────────────────────────────────────────────
   INSTRUMENT: 'NIFTY',
-  LOT_SIZE: {
-    NIFTY: 65,                        // 1 lot Nifty options = 65 units
-  },
+  LOT_SIZE: 65,
 
   // ── Daily loss limit ──────────────────────────────────────
   DAILY_LOSS_LIMIT: 1820,             // Stop trading if loss hits ₹1,820 (2 full-loss trades)
@@ -27,7 +25,7 @@ const RISK_CONSTANTS = {
   MAX_OPEN_TRADES: 1,
 
   // ── Risk : Reward ─────────────────────────────────────────
-  MIN_REWARD_RATIO: 3.0,              // Minimum RR = 1:3
+  MIN_REWARD_RATIO: 2.3,              // Minimum RR = 1:2.3
 
   // ── Minimum SL distance in premium points ─────────────────
   MIN_SL_POINTS: {
@@ -47,8 +45,9 @@ const RISK_CONSTANTS = {
   MIN_PREMIUM: 30,                    // Don't buy below ₹30
   MAX_PREMIUM: 500,                   // Don't buy above ₹500
 
-  // ── Expiry ────────────────────────────────────────────────
-  VALID_EXPIRY_TYPES: ['WEEKLY', 'MONTHLY'],
+   // ── Expiry — always weekly, auto-set, no need to mention ──
+  DEFAULT_EXPIRY: 'WEEKLY',
+  VALID_EXPIRY_TYPES: ['WEEKLY'],
 
 };
 

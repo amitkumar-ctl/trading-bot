@@ -10,10 +10,6 @@ require('dotenv').config();
 const { parsePrompt } = require('../src/promptParser/index');
 const { runRiskGate } = require('../src/riskGate/index');
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error('❌  ANTHROPIC_API_KEY not set in .env file');
-  process.exit(1);
-}
 
 let passed = 0; let failed = 0;
 

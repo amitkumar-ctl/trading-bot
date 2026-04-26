@@ -5,7 +5,7 @@
  *   DAILY_LOSS_LIMIT : ₹1,820
  *   MIN_SL_POINTS    : 14 pts
  *   LOT_SIZE         : 65 units
- *   MIN_REWARD_RATIO : 1:3
+ *   MIN_REWARD_RATIO : 1:2.3
  *   MAX_TRADES/DAY   : 2
  *   MAX_OPEN_TRADES  : 1
  *
