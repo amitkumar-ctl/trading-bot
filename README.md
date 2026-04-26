@@ -1,35 +1,58 @@
 # Nifty Options Trading Bot
 
-A semi-automated trading bot for Nifty options on NSE India. You do the analysis every morning and send a plain English trade idea via Telegram. The bot parses it with Claude AI, enforces your risk rules, asks for confirmation, and places the order on Zerodha.
+A semi-automated trading bot for Nifty weekly options on NSE India. You analyse the market every morning and send a simple Telegram message. The bot handles everything else — ITM strike selection, SL, target, risk checks, and order placement on Zerodha.
 
 ---
 
 ## How it works
 
 ```
-You (Telegram message)
-        ↓
-Claude AI — parses plain English into structured order
-        ↓
-Risk Gate — enforces your hardcoded rules (no exceptions)
-        ↓
-YES / NO buttons — you confirm before anything is placed
-        ↓
-Zerodha Kite API — places entry + SL + target orders
+You send in Telegram: "buy ce 100"
+              ↓
+Bot detects: CE, entry ₹100
+              ↓
+Yahoo Finance: fetches Nifty spot price
+              ↓
+Auto-selects: first ITM strike
+              ↓
+Auto-sets: SL = ₹86 (14 pts below entry)
+           Target = ₹132 (1:2.3 RR)
+              ↓
+Risk gate: checks all your rules
+              ↓
+Bot replies with summary + YES / NO buttons
+              ↓
+You tap YES → order placed on Zerodha
 ```
-
-### Example morning message
-```
-Bearish on nifty today. 24000 PE weekly, entry around 90, SL 76, target 132
-```
-
-The bot extracts all parameters, checks your rules, and replies with a summary + confirmation buttons. You tap YES — order is placed. You tap NO — nothing happens.
 
 ---
 
-## Risk rules (hardcoded)
+## What you send every morning
 
-These are enforced on every trade. The AI cannot override them.
+```
+buy ce 100       ← bullish, entry ₹100
+buy pe 85        ← bearish, entry ₹85
+buy ce           ← fetches live market price automatically
+buy pe           ← fetches live market price automatically
+```
+
+That's it. Nothing else needed.
+
+---
+
+## What the bot auto-sets
+
+| | |
+|---|---|
+| Strike | First ITM from live Nifty spot price |
+| Expiry | Weekly (always) |
+| SL | Entry − 14 pts |
+| Target | Entry + (14 × 2.3) pts |
+| Lots | 1 (say "2 lots" to override) |
+
+---
+
+## Risk rules (hardcoded — cannot be overridden)
 
 | Rule | Value |
 |---|---|
@@ -37,10 +60,12 @@ These are enforced on every trade. The AI cannot override them.
 | Lot size | 65 units |
 | Daily loss limit | ₹1,820 |
 | Max trades per day | 2 |
-| Max open trades | 1 |
+| Max open trades | 1 at a time |
 | Min SL distance | 14 pts |
-| Min Risk:Reward | 1:3 |
+| Min Risk:Reward | 1:2.3 |
 | Premium range | ₹30 – ₹500 |
+| Trading window | 9:45am – 2:30pm IST only |
+| Market days | No weekends, no NSE holidays |
 
 ---
 
@@ -50,17 +75,20 @@ These are enforced on every trade. The AI cannot override them.
 trading-bot/
   src/
     riskGate/
-      constants.js      ← your risk rules (edit only this to change rules)
-      index.js          ← risk gate logic (47 tests)
+      constants.js      ← your risk rules (only file you ever edit)
+      index.js          ← risk gate logic
     promptParser/
-      index.js          ← Claude AI parses your Telegram message
+      index.js          ← parses your Telegram message (regex, no API needed)
     broker/
       index.js          ← Zerodha Kite integration (paper + live mode)
     bot/
-      index.js          ← Telegram bot (entry point)
+      index.js          ← Telegram bot entry point
+    auth/
+      index.js          ← Kite daily login server (token refresh)
+    utils/
+      marketHours.js    ← market hours, holiday checker, Nifty spot price
   tests/
-    riskGate.test.js    ← 47 tests for risk gate
-    promptParser.test.js← tests for prompt parser (needs API key)
+    riskGate.test.js    ← risk gate tests
   .env.example          ← copy to .env and fill in your keys
   .gitignore
   package.json
@@ -72,14 +100,15 @@ trading-bot/
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) v18 or higher
-- [Telegram bot token](https://t.me/BotFather) — create a bot via @BotFather
-- Your Telegram chat ID — get it from @userinfobot
-- [Anthropic API key](https://console.anthropic.com) — for Claude AI prompt parsing
-- [Zerodha Kite Connect](https://kite.trade) subscription — for live trading (₹2,000/month)
+- [Telegram bot token](https://t.me/BotFather) — create via @BotFather
+- Your Telegram chat ID — get from @userinfobot
+- [Zerodha Kite Connect](https://kite.trade) app — Personal Free plan
+- [ngrok](https://ngrok.com) — for Kite daily login (free account)
+- AWS EC2 instance (t2.micro free tier) — for 24/7 hosting
 
 ---
 
-## Setup
+## One time setup
 
 **1. Clone the repo**
 ```bash
@@ -92,35 +121,100 @@ cd nifty-options-bot
 npm install
 ```
 
-**3. Create your `.env` file**
+**3. Create .env file**
 ```bash
 cp .env.example .env
+nano .env
 ```
 
-Open `.env` and fill in your values:
+Fill in:
 ```
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxx
-TELEGRAM_BOT_TOKEN=7123456789:AAFxxx
-TELEGRAM_CHAT_ID=912345678
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_chat_id
 KITE_API_KEY=your_kite_api_key
 KITE_API_SECRET=your_kite_api_secret
-KITE_ACCESS_TOKEN=your_daily_access_token
+KITE_ACCESS_TOKEN=
 PAPER_TRADE=true
 ```
 
-**4. Run the risk gate tests**
+**4. Install PM2**
+```bash
+sudo npm install -g pm2
+```
+
+**5. Install ngrok**
+```bash
+snap install ngrok
+ngrok config add-authtoken YOUR_NGROK_TOKEN
+```
+
+**6. Start ngrok tunnel**
+```bash
+pm2 start "ngrok http 3000" --name "ngrok-tunnel"
+pm2 save
+pm2 logs ngrok-tunnel   # copy the https URL shown
+```
+
+**7. Set redirect URL in Kite app**
+
+Go to kite.trade → your app → set redirect URL to:
+```
+https://xxxx.ngrok-free.app/callback
+```
+
+**8. Start all services**
+```bash
+pm2 start src/auth/index.js --name "kite-login"
+pm2 start src/bot/index.js --name "nifty-bot"
+pm2 save
+pm2 status
+```
+
+You should see 3 processes running:
+```
+nifty-bot       online
+kite-login      online
+ngrok-tunnel    online
+```
+
+**9. Run risk gate tests**
 ```bash
 npm run test:risk
 ```
 
-All 47 tests should pass before you run the bot.
+All tests should pass before trading.
 
-**5. Start the bot**
-```bash
-npm start
+---
+
+## Every morning routine
+
+**Step 1 — Refresh Zerodha token**
+```
+Open browser → https://xxxx.ngrok-free.app
+Click "Login with Zerodha"
+Enter credentials + TOTP
+See green ✅ success page → token saved automatically
 ```
 
-The terminal will hang — that's normal. The bot is listening. Open Telegram and send `/start` to your bot.
+**Step 2 — Send trade in Telegram**
+```
+buy ce 100    ← if you know the entry price
+buy ce        ← fetches live price automatically
+```
+
+**Step 3 — Confirm order**
+```
+Bot shows trade summary with YES / NO buttons
+Tap YES → order placed
+```
+
+**Step 4 — Close trade (paper mode)**
+```
+When SL or target hits on your chart:
+Send /close in Telegram
+Type exit premium e.g. 132
+Bot records P&L
+```
 
 ---
 
@@ -128,62 +222,57 @@ The terminal will hang — that's normal. The bot is listening. Open Telegram an
 
 | Command | What it does |
 |---|---|
-| `/start` | Welcome message and instructions |
+| `/start` | Welcome message |
 | `/status` | Today's P&L, trades taken, daily room left |
-| `/orders` | All orders placed today (paper mode) |
-| `/close` | Manually close last open trade (paper mode) |
+| `/orders` | All orders placed today |
+| `/close` | Close last open trade (paper mode) |
 | `/rules` | Your hardcoded risk rules |
-| `/cancel` | Cancel a pending order confirmation |
+| `/cancel` | Cancel pending order confirmation |
 
 ---
 
 ## Paper trading vs live trading
 
-The bot starts in **paper trade mode** by default (`PAPER_TRADE=true`). In this mode:
-- Orders are simulated and logged — no real money involved
-- Use `/close` to record your exit price and track P&L
-- Everything else works exactly as it would in live mode
+Bot starts in **paper trade mode** by default (`PAPER_TRADE=true`).
+- Orders are simulated — no real money
+- Use `/close` to record exits and track P&L
+- Everything works exactly like live mode
 
 **To switch to live trading:**
-1. Get Kite Connect API credentials from [kite.trade](https://kite.trade)
-2. Set `PAPER_TRADE=false` in your `.env`
-3. Fill in `KITE_API_KEY`, `KITE_API_SECRET`, `KITE_ACCESS_TOKEN`
+1. Complete morning login flow at `https://xxxx.ngrok-free.app`
+2. Set `PAPER_TRADE=false` in `.env`
+3. Restart bot: `pm2 restart nifty-bot`
 
-> ⚠️ Paper trade for at least 2 weeks before going live. Understand how the bot behaves before real money is involved.
+> ⚠️ Paper trade for at least 2 weeks before going live.
 
 ---
 
-## Daily workflow
+## Updating code
 
-**Before market opens:**
 ```bash
-npm start
-```
+# On your Mac — push changes
+git add .
+git commit -m "your message"
+git push
 
-**Send your trade idea in Telegram:**
-```
-Buy Nifty 24200 CE weekly, entry 100, SL 86, target 142
-```
-
-**When trade exits (SL or target hit):**
-```
-/close
-→ Bot asks: at what premium did you exit?
-→ Type: 142
-→ Bot shows P&L and updates daily total
-```
-
-**End of day:**
-```
-/status   → check final P&L
-Ctrl+C    → stop the bot
+# On AWS server — pull and restart
+git pull
+npm install
+pm2 restart all
 ```
 
 ---
 
-## Kite access token — daily refresh
+## PM2 commands
 
-Zerodha's access token expires every day at 6am. For paper trading this doesn't matter. For live trading you'll need to refresh it each morning. A login helper script will be added in a future update.
+```bash
+pm2 status                  # check all processes
+pm2 logs nifty-bot          # live bot logs
+pm2 logs kite-login         # login server logs
+pm2 restart nifty-bot       # restart bot
+pm2 restart all             # restart everything
+pm2 stop all                # stop everything
+```
 
 ---
 
@@ -191,16 +280,19 @@ Zerodha's access token expires every day at 6am. For paper trading this doesn't 
 
 | Layer | Technology |
 |---|---|
-| Bot framework | [Telegraf](https://telegraf.js.org) |
-| AI parsing | [Anthropic Claude](https://anthropic.com) (`claude-opus-4-5`) |
-| Broker API | [Kite Connect](https://kite.trade/docs/connect) |
+| Bot framework | Telegraf |
+| Spot price | Yahoo Finance API |
+| Option price | NSE India API |
+| Broker API | Zerodha Kite Connect |
 | Runtime | Node.js |
-| Language | JavaScript (CommonJS) |
+| Hosting | AWS EC2 (t2.micro) |
+| Process manager | PM2 |
+| HTTPS tunnel | ngrok |
 
 ---
 
 ## Disclaimer
 
-This bot is a personal trading tool. It does not guarantee profits. All trading involves risk. You are responsible for your own trades and any losses incurred. This is not financial advice.
+This is a personal trading tool. It does not guarantee profits. All trading involves risk. You are responsible for your own trades and any losses. This is not financial advice.
 
-Automated trading on Zerodha requires compliance with SEBI regulations. Semi-automated trading (human confirms every order) is what this bot does — you tap YES before every order is placed.
+You manually confirm every order by tapping YES in Telegram before anything is placed on Zerodha — making this semi-automated, not fully automated.
