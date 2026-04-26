@@ -127,7 +127,7 @@ async function placeLiveOrder(order, tradingSymbol) {
   } catch (err) {
     // Handle common Kite errors cleanly
     if (err.message?.includes('Invalid token')) {
-      throw new Error('Access token expired. Open http://YOUR_ELASTIC_IP:3000 to login again.');
+      throw new Error('Access token expired. Open http://13.50.143.165:3000 to login again.');
     }
     if (err.message?.includes('not enabled') || err.message?.includes('segment')) {
       throw new Error('F&O trading not enabled on your Zerodha account. Enable it from Zerodha console.');

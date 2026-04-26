@@ -161,7 +161,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`\n🔐 Kite Login Server running`);
   console.log(`   Open this in your browser:`);
-  console.log(`   http://${process.env.ELASTIC_IP || 'YOUR_ELASTIC_IP'}:${PORT}/login\n`);
+  console.log(`   http://${process.env.ELASTIC_IP}:${PORT}/login\n`);
 });
 
 // ─────────────────────────────────────────────────────────────
