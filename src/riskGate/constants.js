@@ -8,9 +8,6 @@
 
 const RISK_CONSTANTS = {
 
-  // ── Capital ────────────────────────────────────────────────
-  TOTAL_CAPITAL: 25000,               // ₹25,000
-
   // ── Instrument ────────────────────────────────────────────
   INSTRUMENT: 'NIFTY',
   LOT_SIZE: 65,
