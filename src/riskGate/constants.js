@@ -25,7 +25,8 @@ const RISK_CONSTANTS = {
   MAX_OPEN_TRADES: 1,
 
   // ── Risk : Reward ─────────────────────────────────────────
-  MIN_REWARD_RATIO: 2.3,              // Minimum RR = 1:2.3
+  MIN_REWARD_RATIO: 2.3,
+  MIN_REWARD_RATIO_CHECK: 2.29,              // Minimum RR = 1:2.3
 
   // ── Minimum SL distance in premium points ─────────────────
   MIN_SL_POINTS: {

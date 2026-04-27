@@ -187,7 +187,7 @@ function checkRewardRatio({ premium, slPremium, targetPremium }) {
   const risk   = premium - slPremium;
   const reward = targetPremium - premium;
   const rr     = reward / risk;
-  const passed = rr >= C.MIN_REWARD_RATIO;
+  const passed = rr >= C.MIN_REWARD_RATIO_CHECK;  
   return {
     name: `RR ≥ 1:${C.MIN_REWARD_RATIO}`,
     passed,
@@ -247,7 +247,7 @@ function maxSlGap(instrument = 'NIFTY', lots = 1) {
 // Minimum target premium to achieve your fixed RR
 function minTarget(premium, slPremium) {
   const risk = premium - slPremium;
-  return Math.round(premium + risk * C.MIN_REWARD_RATIO);
+  return Math.ceil(premium + risk * C.MIN_REWARD_RATIO);
 }
 
 module.exports = { runRiskGate, maxSlGap, minTarget };
