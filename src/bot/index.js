@@ -9,12 +9,12 @@ require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const { parsePrompt, formatOrderSummary } = require('../promptParser/index');
 const { runRiskGate } = require('../riskGate/index');
-const { placeOrder, closePaperOrder, getPaperOrders, isPaperMode } = require('../broker/index');
+const { placeOrder, squareOffAll } = require('../broker/index');
 const { checkMarketHours, getISTTimeString } = require('../utils/marketHours');
 const C = require('../riskGate/constants');
 
 // ── Validate env ──────────────────────────────────────────────
-['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID',].forEach(k => {
+['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'].forEach(k => {
     if (!process.env[k]) { console.error(`❌ Missing ${k} in .env`); process.exit(1); }
 });
 
@@ -22,12 +22,11 @@ const MY_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // ── Daily state ───────────────────────────────────────────────
 const state = {
-    dailyPnl: 0,
-    openTradesCount: 0,
+    dailyPnl:         0,
+    openTradesCount:  0,
     tradesTodayCount: 0,
-    pendingOrder: null,
-    pendingClose: false,
-    lastOrderId: null,
+    pendingOrder:     null,
+    lastOrderId:      null,
 };
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
@@ -42,11 +41,9 @@ bot.use((ctx, next) => {
 // /start
 // ─────────────────────────────────────────────────────────────
 bot.command('start', (ctx) => {
-    const mode = isPaperMode() ? '📄 PAPER TRADE' : '🟢 LIVE TRADE';
     const market = checkMarketHours();
     ctx.replyWithMarkdown([
-        `👋 *Nifty Options Bot*`,
-        `Mode: ${mode}`,
+        `👋 *Nifty Options Bot* 🟢 LIVE`,
         `Time: ${getISTTimeString()} IST`,
         `Market: ${market.reason}`,
         ``,
@@ -55,11 +52,10 @@ bot.command('start', (ctx) => {
         ``,
         `Target is always auto-set at 1:${C.MIN_REWARD_RATIO} RR ⚡`,
         ``,
-        `*/status*  — today's P&L and trades`,
-        `*/orders*  — all orders today`,
-        `*/close*   — close last open trade`,
-        `*/rules*   — your risk rules`,
-        `*/cancel*  — cancel pending order`,
+        `*/status*     — today's P&L and trades`,
+        `*/rules*      — your risk rules`,
+        `*/cancel*     — cancel pending order`,
+        `*/squareoff*  — 🔴 emergency exit all positions`,
     ].join('\n'));
 });
 
@@ -67,14 +63,13 @@ bot.command('start', (ctx) => {
 // /status
 // ─────────────────────────────────────────────────────────────
 bot.command('status', (ctx) => {
-    const loss = Math.abs(Math.min(0, state.dailyPnl));
+    const loss      = Math.abs(Math.min(0, state.dailyPnl));
     const remaining = Math.max(0, C.DAILY_LOSS_LIMIT - loss);
-    const sign = state.dailyPnl >= 0 ? '+' : '';
-    const market = checkMarketHours();
-    const mode = isPaperMode() ? '📄 Paper' : '🟢 Live';
+    const sign      = state.dailyPnl >= 0 ? '+' : '';
+    const market    = checkMarketHours();
 
     ctx.replyWithMarkdown([
-        `📊 *Today's Status* (${mode})`,
+        `📊 *Today's Status* 🟢 Live`,
         `🕐 ${getISTTimeString()} IST`,
         ``,
         `P&L          : ${sign}₹${state.dailyPnl.toLocaleString('en-IN')}`,
@@ -84,30 +79,6 @@ bot.command('status', (ctx) => {
         ``,
         market.reason,
     ].join('\n'));
-});
-
-// ─────────────────────────────────────────────────────────────
-// /orders
-// ─────────────────────────────────────────────────────────────
-bot.command('orders', (ctx) => {
-    if (!isPaperMode()) { ctx.reply('Live mode — check Zerodha app for orders.'); return; }
-    const orders = getPaperOrders();
-    if (!orders.length) { ctx.reply('No orders placed yet today.'); return; }
-    const lines = orders.map((o, i) => {
-        const pnl = o.pnl !== null ? `P&L: ${o.pnl >= 0 ? '+' : ''}₹${o.pnl.toLocaleString('en-IN')}` : 'Open';
-        return `${i + 1}. ${o.tradingSymbol} | Entry ₹${o.premium} | SL ₹${o.slPremium} | Tgt ₹${o.targetPremium} | ${pnl}`;
-    });
-    ctx.replyWithMarkdown(`📋 *Orders Today*\n\n${lines.join('\n')}`);
-});
-
-// ─────────────────────────────────────────────────────────────
-// /close
-// ─────────────────────────────────────────────────────────────
-bot.command('close', async (ctx) => {
-    if (!isPaperMode()) { ctx.reply('Live mode — close trades from Zerodha app.'); return; }
-    if (!state.lastOrderId) { ctx.reply('No open trade to close.'); return; }
-    state.pendingClose = true;
-    await ctx.reply('At what premium did you exit?\nJust type the number e.g. *142*');
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -137,8 +108,45 @@ bot.command('rules', (ctx) => {
 // ─────────────────────────────────────────────────────────────
 bot.command('cancel', (ctx) => {
     if (state.pendingOrder) { state.pendingOrder = null; ctx.reply('❌ Pending order cancelled.'); }
-    else if (state.pendingClose) { state.pendingClose = false; ctx.reply('❌ Close cancelled.'); }
     else ctx.reply('Nothing to cancel.');
+});
+
+// ─────────────────────────────────────────────────────────────
+// /squareoff — emergency exit all positions
+// ─────────────────────────────────────────────────────────────
+bot.command('squareoff', async (ctx) => {
+    await ctx.replyWithMarkdown(
+        `⚠️ *EMERGENCY SQUARE OFF*\n\nThis will market-sell ALL open NFO positions immediately.\n\nAre you sure?`,
+        Markup.inlineKeyboard([
+            Markup.button.callback('🔴 YES — Exit everything NOW', 'CONFIRM_SQUAREOFF'),
+            Markup.button.callback('❌ NO  — Cancel', 'CANCEL_SQUAREOFF'),
+        ])
+    );
+});
+
+bot.action('CONFIRM_SQUAREOFF', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply('⏳ Squaring off all positions...');
+    try {
+        const result = await squareOffAll();
+        state.openTradesCount = 0;
+        state.lastOrderId     = null;
+        state.pendingOrder    = null;
+        await ctx.replyWithMarkdown([
+            `🔴 *Square Off Done*`,
+            ``,
+            `${result.detail}`,
+            ``,
+            `_Check Zerodha app to confirm exits._`,
+        ].join('\n'));
+    } catch (err) {
+        await ctx.replyWithMarkdown(`❌ *Square off failed*\n\n${err.message}\n\n_Exit manually from Zerodha app immediately._`);
+    }
+});
+
+bot.action('CANCEL_SQUAREOFF', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply('Cancelled. Positions unchanged.');
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -160,7 +168,7 @@ bot.action('CONFIRM_ORDER', async (ctx) => {
         state.lastOrderId = result.orderId;
 
         await ctx.replyWithMarkdown([
-            `✅ *Order Placed* (${isPaperMode() ? '📄 Paper' : '🟢 Live'})`,
+            `✅ *Order Placed* 🟢 Live`,
             ``,
             `Nifty ${order.strike} ${order.optionType} ${order.expiry}`,
             `Entry  : ₹${order.premium}`,
@@ -170,7 +178,7 @@ bot.action('CONFIRM_ORDER', async (ctx) => {
             ``,
             `ID: \`${result.orderId}\``,
             ``,
-            isPaperMode() ? `_Use /close when trade exits._` : `_SL + target orders placed on Zerodha._`,
+            `_SL + target orders placed on Zerodha._`,
         ].join('\n'));
 
     } catch (err) {
@@ -193,31 +201,6 @@ bot.action('CANCEL_ORDER', async (ctx) => {
 bot.on('text', async (ctx) => {
     const message = ctx.message.text;
     if (message.startsWith('/')) return;
-
-    // ── Exit price for /close ──
-    if (state.pendingClose) {
-        const exitPrice = parseFloat(message);
-        if (isNaN(exitPrice) || exitPrice <= 0) {
-            await ctx.reply('Enter a valid premium number e.g. 142'); return;
-        }
-        state.pendingClose = false;
-        const result = closePaperOrder(state.lastOrderId, exitPrice, 'MANUAL');
-        if (result.pnl !== null) {
-            state.dailyPnl += result.pnl;
-            state.openTradesCount = Math.max(0, state.openTradesCount - 1);
-            state.lastOrderId = null;
-            const sign = result.pnl >= 0 ? '+' : '';
-            await ctx.replyWithMarkdown([
-                `📕 *Trade Closed*`,
-                `Exit premium : ₹${exitPrice}`,
-                `P&L          : ${sign}₹${result.pnl.toLocaleString('en-IN')}`,
-                `Today's P&L  : ${state.dailyPnl >= 0 ? '+' : ''}₹${state.dailyPnl.toLocaleString('en-IN')}`,
-            ].join('\n'));
-        } else {
-            await ctx.reply(result.detail);
-        }
-        return;
-    }
 
     // ── Pending order reminder ──
     if (state.pendingOrder) {
@@ -281,12 +264,10 @@ bot.on('text', async (ctx) => {
 // ─────────────────────────────────────────────────────────────
 // Start
 // ─────────────────────────────────────────────────────────────
-const mode = process.env.PAPER_TRADE === 'false' ? '🟢 LIVE' : '📄 PAPER';
 bot.launch().then(() => {
-    console.log(`🤖 Nifty Options Bot started`);
-    console.log(`   Mode     : ${mode}`);
-    console.log(`   Window   : 9:45am – 2:30pm IST`);
-    console.log(`   Chat ID  : ${MY_CHAT_ID}`);
+    console.log(`🤖 Nifty Options Bot started — 🟢 LIVE`);
+    console.log(`   Window      : 9:45am – 2:30pm IST`);
+    console.log(`   Chat ID     : ${MY_CHAT_ID}`);
     console.log(`   Daily limit : ₹${C.DAILY_LOSS_LIMIT.toLocaleString('en-IN')}`);
     console.log(`\n   Send /start in Telegram\n`);
 });
