@@ -20,43 +20,44 @@ function getKiteClient() {
 // ─────────────────────────────────────────────────────────────
 async function placeOrder(order) {
   const tradingSymbol = buildTradingSymbol(order);
-  const k   = getKiteClient();
+  const k = getKiteClient();
   const qty = order.lots * 65;
 
   try {
     // Entry order
     const entryOrderId = await k.placeOrder('regular', {
-      tradingsymbol:    tradingSymbol,
-      exchange:         'NFO',
+      tradingsymbol: tradingSymbol,
+      exchange: 'NFO',
       transaction_type: 'BUY',
-      order_type:       'MARKET',
-      quantity:         qty,
-      product:          'MIS',
-      validity:         'DAY',
+      order_type: 'LIMIT',
+      price: Math.ceil(order.premium * 1.02), // 2% above entry to ensure fill
+      quantity: qty,
+      product: 'MIS',
+      validity: 'DAY',
     });
 
     // SL order
     const slOrderId = await k.placeOrder('regular', {
-      tradingsymbol:    tradingSymbol,
-      exchange:         'NFO',
+      tradingsymbol: tradingSymbol,
+      exchange: 'NFO',
       transaction_type: 'SELL',
-      order_type:       'SL-M',
-      trigger_price:    order.slPremium,
-      quantity:         qty,
-      product:          'MIS',
-      validity:         'DAY',
+      order_type: 'SL-M',
+      trigger_price: order.slPremium,
+      quantity: qty,
+      product: 'MIS',
+      validity: 'DAY',
     });
 
     // Target order
     const targetOrderId = await k.placeOrder('regular', {
-      tradingsymbol:    tradingSymbol,
-      exchange:         'NFO',
+      tradingsymbol: tradingSymbol,
+      exchange: 'NFO',
       transaction_type: 'SELL',
-      order_type:       'LIMIT',
-      price:            order.targetPremium,
-      quantity:         qty,
-      product:          'MIS',
-      validity:         'DAY',
+      order_type: 'LIMIT',
+      price: order.targetPremium,
+      quantity: qty,
+      product: 'MIS',
+      validity: 'DAY',
     });
 
     console.log(`\n🟢 LIVE ORDER PLACED:`);
@@ -66,7 +67,7 @@ async function placeOrder(order) {
 
     return {
       orderId: entryOrderId,
-      detail:  `Entry ${entryOrderId} | SL ${slOrderId} | Target ${targetOrderId}`,
+      detail: `Entry ${entryOrderId} | SL ${slOrderId} | Target ${targetOrderId}`,
     };
 
   } catch (err) {
@@ -84,31 +85,31 @@ async function placeOrder(order) {
 // Square off ALL open NFO positions (emergency exit)
 // ─────────────────────────────────────────────────────────────
 async function squareOffAll() {
-  const k         = getKiteClient();
+  const k = getKiteClient();
   const positions = await k.getPositions();
-  const nfo       = (positions.net || []).filter(p => p.exchange === 'NFO' && p.quantity > 0);
+  const nfo = (positions.net || []).filter(p => p.exchange === 'NFO' && p.quantity > 0);
 
   if (!nfo.length) return { count: 0, detail: 'No open NFO positions found on Zerodha.' };
 
   const results = await Promise.allSettled(
     nfo.map(p =>
       k.placeOrder('regular', {
-        tradingsymbol:    p.tradingsymbol,
-        exchange:         'NFO',
+        tradingsymbol: p.tradingsymbol,
+        exchange: 'NFO',
         transaction_type: 'SELL',
-        order_type:       'MARKET',
-        quantity:         p.quantity,
-        product:          p.product,
-        validity:         'DAY',
+        order_type: 'MARKET',
+        quantity: p.quantity,
+        product: p.product,
+        validity: 'DAY',
       })
     )
   );
 
   const succeeded = results.filter(r => r.status === 'fulfilled').length;
-  const failed    = results.filter(r => r.status === 'rejected').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
 
   return {
-    count:  succeeded,
+    count: succeeded,
     detail: `Squared off ${succeeded} position(s)${failed ? `, ${failed} failed — check Zerodha app.` : '.'}`,
   };
 }
@@ -116,9 +117,9 @@ async function squareOffAll() {
 // Get this week's expiry Thursday
 function getExpiryDate() {
   // Get current IST time
-  const now  = new Date();
-  const ist  = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 5.5 * 3600000);
-  const day  = ist.getDay(); // 0=Sun, 1=Mon, 2=Tue
+  const now = new Date();
+  const ist = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 5.5 * 3600000);
+  const day = ist.getDay(); // 0=Sun, 1=Mon, 2=Tue
 
   const expiry = new Date(ist);
 
@@ -138,10 +139,10 @@ function getExpiryDate() {
 }
 
 function buildTradingSymbol(order) {
-  const expiry  = getExpiryDate();
-  const year    = String(expiry.getFullYear()).slice(2);  // "26"
-  const months  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  const month   = months[expiry.getMonth()];             // "APR"
+  const expiry = getExpiryDate();
+  const year = String(expiry.getFullYear()).slice(2);  // "26"
+  const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  const month = months[expiry.getMonth()];             // "APR"
 
   // Format: NIFTY26APR24200CE
   const symbol = `NIFTY${year}${month}${order.strike}${order.optionType}`;
