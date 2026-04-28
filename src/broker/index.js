@@ -41,8 +41,9 @@ async function placeOrder(order) {
       tradingsymbol: tradingSymbol,
       exchange: 'NFO',
       transaction_type: 'SELL',
-      order_type: 'SL-M',
+      order_type: 'SL',
       trigger_price: order.slPremium,
+      price: Math.floor(order.slPremium * 0.98), // 2% below SL to ensure fill
       quantity: qty,
       product: 'MIS',
       validity: 'DAY',
