@@ -113,23 +113,38 @@ async function squareOffAll() {
   };
 }
 
-// ─────────────────────────────────────────────────────────────
-// Build Zerodha trading symbol
-// ─────────────────────────────────────────────────────────────
-function buildTradingSymbol(order) {
-  const now    = new Date();
-  const year   = String(now.getFullYear()).slice(2);         // "25"
-  const month  = now.getMonth() + 1;                        // 1-12
-  const day    = String(now.getDate()).padStart(2, '0');    // "17"
+// Get this week's expiry Thursday
+function getExpiryDate() {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 1=Mon ... 4=Thu ... 6=Sat
+  const expiry = new Date(now);
 
-  // Zerodha weekly format: for Oct(10), Nov(11), Dec(12) use O, N, D
-  // Jan-Sep use single digit 1-9
+  if (day <= 4) {
+    // Mon-Thu → this Thursday
+    expiry.setDate(now.getDate() + (4 - day));
+  } else {
+    // Fri-Sat → next Thursday
+    expiry.setDate(now.getDate() + (11 - day));
+  }
+  return expiry;
+}
+
+function buildTradingSymbol(order) {
+  const expiry = getExpiryDate();
+  const year   = String(expiry.getFullYear()).slice(2);      // "25"
+  const month  = expiry.getMonth() + 1;                     // 1-12
+  const day    = String(expiry.getDate()).padStart(2, '0'); // "17"
+
+  // Weekly month codes
   const monthCode = month === 10 ? 'O'
                   : month === 11 ? 'N'
                   : month === 12 ? 'D'
-                  : String(month);                          // "1"-"9"
+                  : String(month);  // 1-9 as string
 
-  return `NIFTY${year}${monthCode}${day}${order.strike}${order.optionType}`;
+  // Format: NIFTY25417{strike}CE
+  const symbol = `NIFTY${year}${monthCode}${day}${order.strike}${order.optionType}`;
+  console.log('Trading symbol:', symbol);
+  return symbol;
 }
 
 module.exports = { placeOrder, squareOffAll };
