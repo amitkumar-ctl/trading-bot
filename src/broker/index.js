@@ -115,16 +115,19 @@ async function squareOffAll() {
 
 // Get this week's expiry Thursday
 function getExpiryDate() {
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun, 1=Mon ... 4=Thu ... 6=Sat
-  const expiry = new Date(now);
+  // Get current time in IST (UTC+5:30)
+  const now    = new Date();
+  const ist    = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 5.5 * 3600000);
+  const day    = ist.getDay(); // 0=Sun, 1=Mon ... 4=Thu
+
+  const expiry = new Date(ist);
 
   if (day <= 4) {
-    // Mon-Thu → this Thursday
-    expiry.setDate(now.getDate() + (4 - day));
+    // Sun-Thu → this Thursday
+    expiry.setDate(ist.getDate() + (4 - day));
   } else {
     // Fri-Sat → next Thursday
-    expiry.setDate(now.getDate() + (11 - day));
+    expiry.setDate(ist.getDate() + (11 - day));
   }
   return expiry;
 }
