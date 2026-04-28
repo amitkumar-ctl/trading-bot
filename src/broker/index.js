@@ -67,8 +67,8 @@ async function placeOrder(order) {
     console.log(`   Target : ${targetOrderId}\n`);
 
     return {
-      orderId: entryOrderId,
-      detail: `Entry ${entryOrderId} | SL ${slOrderId} | Target ${targetOrderId}`,
+      orderId: JSON.stringify(entryOrderId),
+      detail: `Entry ${JSON.stringify(entryOrderId)} | SL ${JSON.stringify(slOrderId)} | Target ${JSON.stringify(targetOrderId)}`,
     };
 
   } catch (err) {
