@@ -25,7 +25,7 @@ async function placeOrder(order) {
 
   try {
     // Entry order
-    const entryOrderId = await k.placeOrder('nfo', {
+    const entryOrderId = await k.placeOrder('regular', {
       tradingsymbol:    tradingSymbol,
       exchange:         'NFO',
       transaction_type: 'BUY',
@@ -36,7 +36,7 @@ async function placeOrder(order) {
     });
 
     // SL order
-    const slOrderId = await k.placeOrder('nfo', {
+    const slOrderId = await k.placeOrder('regular', {
       tradingsymbol:    tradingSymbol,
       exchange:         'NFO',
       transaction_type: 'SELL',
@@ -48,7 +48,7 @@ async function placeOrder(order) {
     });
 
     // Target order
-    const targetOrderId = await k.placeOrder('nfo', {
+    const targetOrderId = await k.placeOrder('regular', {
       tradingsymbol:    tradingSymbol,
       exchange:         'NFO',
       transaction_type: 'SELL',
@@ -92,7 +92,7 @@ async function squareOffAll() {
 
   const results = await Promise.allSettled(
     nfo.map(p =>
-      k.placeOrder('nfo', {
+      k.placeOrder('regular', {
         tradingsymbol:    p.tradingsymbol,
         exchange:         'NFO',
         transaction_type: 'SELL',
