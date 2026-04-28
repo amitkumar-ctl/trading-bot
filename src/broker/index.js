@@ -66,9 +66,13 @@ async function placeOrder(order) {
     console.log(`   SL     : ${slOrderId}`);
     console.log(`   Target : ${targetOrderId}\n`);
 
+    const entryId = entryOrderId?.order_id || entryOrderId;
+    const slId = slOrderId?.order_id || slOrderId;
+    const targetId = targetOrderId?.order_id || targetOrderId;
+
     return {
-      orderId: JSON.stringify(entryOrderId),
-      detail: `Entry ${JSON.stringify(entryOrderId)} | SL ${JSON.stringify(slOrderId)} | Target ${JSON.stringify(targetOrderId)}`,
+      orderId: entryId,
+      detail: `Entry ${entryId} | SL ${slId} | Target ${targetId}`,
     };
 
   } catch (err) {
@@ -151,4 +155,24 @@ function buildTradingSymbol(order) {
   return symbol;
 }
 
-module.exports = { placeOrder, squareOffAll };
+async function cancelOrder(orderIdObj) {
+  const k = getKiteClient();
+  // Handle both string and object order IDs
+  const orderId = typeof orderIdObj === 'string'
+    ? orderIdObj
+    : orderIdObj.order_id || JSON.parse(orderIdObj).order_id;
+
+  await k.cancelOrder('regular', orderId);
+  return { detail: `Order ${orderId} cancelled on Zerodha.` };
+}
+
+async function getOpenPositionsCount() {
+  const k = getKiteClient();
+  const positions = await k.getPositions();
+  const open = (positions.net || []).filter(p =>
+    p.exchange === 'NFO' && Math.abs(p.quantity) > 0
+  );
+  return open.length;
+}
+
+module.exports = { placeOrder, squareOffAll, cancelOrder, getOpenPositionsCount };

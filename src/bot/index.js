@@ -57,6 +57,9 @@ bot.command('start', (ctx) => {
         `*/cancel*     — cancel pending order`,
         `*/squareoff*  — 🔴 emergency exit all positions`,
         `*/traded*     — mark a trade as closed (when SL or target hit)`,
+        `*/cancelorder* — cancel last placed Zerodha order`,
+        `*/sync*         — sync open positions with Zerodha`,
+        `*/resettrades*  — reset daily trade count`,
     ].join('\n'));
 });
 
@@ -119,6 +122,59 @@ bot.command('traded', (ctx) => {
   } else {
     ctx.reply('No open trades to close.');
   }
+});
+
+// /cancelorder — cancel last placed order on Zerodha
+bot.command('cancelorder', async (ctx) => {
+  if (!state.lastOrderId) {
+    await ctx.reply('No open order to cancel.');
+    return;
+  }
+  try {
+    const { cancelOrder } = require('../broker/index');
+    const result = await cancelOrder(state.lastOrderId);
+    state.openTradesCount = Math.max(0, state.openTradesCount - 1);
+    state.tradesTodayCount = Math.max(0, state.tradesTodayCount - 1);
+    state.lastOrderId = null;
+    await ctx.replyWithMarkdown(`✅ *Order Cancelled*\n\n${result.detail}`);
+  } catch (err) {
+    await ctx.replyWithMarkdown(`❌ *Cancel failed*\n\n${err.message}\n\n_Cancel manually from Zerodha app._`);
+  }
+});
+
+// /sync — sync open trade count with actual Zerodha positions
+bot.command('sync', async (ctx) => {
+  try {
+    const { getOpenPositionsCount } = require('../broker/index');
+    const count = await getOpenPositionsCount();
+    state.openTradesCount = count;
+    await ctx.replyWithMarkdown([
+      `🔄 *Synced with Zerodha*`,
+      ``,
+      `Open trades : ${count}`,
+      `Trades today: ${state.tradesTodayCount}`,
+      ``,
+      `_If you cancelled trades on Zerodha app, use /resettrades to reset daily count._`,
+    ].join('\n'));
+  } catch (err) {
+    await ctx.replyWithMarkdown(`❌ Sync failed: ${err.message}`);
+  }
+});
+
+// /resettrades — manually reset daily trade count
+bot.command('resettrades', async (ctx) => {
+  const old = state.tradesTodayCount;
+  state.tradesTodayCount = 0;
+  state.openTradesCount  = 0;
+  state.lastOrderId      = null;
+  await ctx.replyWithMarkdown([
+    `🔄 *Trade Count Reset*`,
+    ``,
+    `Was: ${old} trades today`,
+    `Now: 0 trades today`,
+    ``,
+    `_Bot ready for fresh trades._`,
+  ].join('\n'));
 });
 
 // ─────────────────────────────────────────────────────────────
