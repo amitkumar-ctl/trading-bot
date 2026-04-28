@@ -56,6 +56,7 @@ bot.command('start', (ctx) => {
         `*/rules*      — your risk rules`,
         `*/cancel*     — cancel pending order`,
         `*/squareoff*  — 🔴 emergency exit all positions`,
+        `*/traded*     — mark a trade as closed (when SL or target hit)`,
     ].join('\n'));
 });
 
@@ -109,6 +110,15 @@ bot.command('rules', (ctx) => {
 bot.command('cancel', (ctx) => {
     if (state.pendingOrder) { state.pendingOrder = null; ctx.reply('❌ Pending order cancelled.'); }
     else ctx.reply('Nothing to cancel.');
+});
+
+bot.command('traded', (ctx) => {
+  if (state.openTradesCount > 0) {
+    state.openTradesCount--;
+    ctx.replyWithMarkdown(`✅ Open trade count updated: ${state.openTradesCount} open`);
+  } else {
+    ctx.reply('No open trades to close.');
+  }
 });
 
 // ─────────────────────────────────────────────────────────────

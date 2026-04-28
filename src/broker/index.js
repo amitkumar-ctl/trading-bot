@@ -118,10 +118,18 @@ async function squareOffAll() {
 // ─────────────────────────────────────────────────────────────
 function buildTradingSymbol(order) {
   const now    = new Date();
-  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  const month  = months[now.getMonth()];
-  const year   = String(now.getFullYear()).slice(2);
-  return `NIFTY${year}${month}${order.strike}${order.optionType}`;
+  const year   = String(now.getFullYear()).slice(2);         // "25"
+  const month  = now.getMonth() + 1;                        // 1-12
+  const day    = String(now.getDate()).padStart(2, '0');    // "17"
+
+  // Zerodha weekly format: for Oct(10), Nov(11), Dec(12) use O, N, D
+  // Jan-Sep use single digit 1-9
+  const monthCode = month === 10 ? 'O'
+                  : month === 11 ? 'N'
+                  : month === 12 ? 'D'
+                  : String(month);                          // "1"-"9"
+
+  return `NIFTY${year}${monthCode}${day}${order.strike}${order.optionType}`;
 }
 
 module.exports = { placeOrder, squareOffAll };
