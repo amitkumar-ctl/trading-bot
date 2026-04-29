@@ -132,6 +132,7 @@ bot.command('cancelorder', async (ctx) => {
   }
   try {
     const { cancelOrder } = require('../broker/index');
+    // lastOrderId must be the full result object from placeOrder
     const result = await cancelOrder(state.lastOrderId);
     state.openTradesCount = Math.max(0, state.openTradesCount - 1);
     state.tradesTodayCount = Math.max(0, state.tradesTodayCount - 1);
@@ -231,7 +232,7 @@ bot.action('CONFIRM_ORDER', async (ctx) => {
 
         state.tradesTodayCount++;
         state.openTradesCount++;
-        state.lastOrderId = result.orderId;
+        state.lastOrderId = result;
 
         await ctx.replyWithMarkdown([
             `✅ *Order Placed* 🟢 Live`,

@@ -24,55 +24,71 @@ async function placeOrder(order) {
   const qty = order.lots * 65;
 
   try {
-    // Entry order
-    const entryOrderId = await k.placeOrder('regular', {
+    // Step 1 — Place entry LIMIT order
+    const entryResponse = await k.placeOrder('regular', {
       tradingsymbol: tradingSymbol,
       exchange: 'NFO',
       transaction_type: 'BUY',
       order_type: 'LIMIT',
-      price: Math.ceil(order.premium * 1.02), // 2% above entry to ensure fill
+      price: Math.ceil(order.premium * 1.02),
       quantity: qty,
       product: 'MIS',
       validity: 'DAY',
     });
 
-    // SL order
-    const slOrderId = await k.placeOrder('regular', {
+    const entryId = entryResponse?.order_id || entryResponse;
+    console.log('Entry order placed:', entryId);
+
+    // Step 2 — Wait for entry to fill before placing GTT
+    console.log('Waiting for entry to fill...');
+    const filled = await waitForOrderFill(k, entryId, 60);
+
+    if (!filled) {
+      return {
+        orderId: entryId,
+        slOrderId: null,
+        targetOrderId: null,
+        detail: `Entry ${entryId} placed but not filled yet. Place SL/target manually on Zerodha.`,
+      };
+    }
+
+    // Step 3 — Place GTT OCO for SL + target
+    const gttResponse = await k.createGTT({
+      trigger_type: 'two-leg',
       tradingsymbol: tradingSymbol,
       exchange: 'NFO',
-      transaction_type: 'SELL',
-      order_type: 'SL',
-      trigger_price: order.slPremium,
-      price: Math.floor(order.slPremium * 0.98), // 2% below SL to ensure fill
-      quantity: qty,
-      product: 'MIS',
-      validity: 'DAY',
+      trigger_values: [order.slPremium, order.targetPremium],
+      last_price: order.premium,
+      orders: [
+        {
+          transaction_type: 'SELL',
+          quantity: qty,
+          product: 'MIS',
+          order_type: 'LIMIT',
+          price: Math.floor(order.slPremium * 0.95),
+        },
+        {
+          transaction_type: 'SELL',
+          quantity: qty,
+          product: 'MIS',
+          order_type: 'LIMIT',
+          price: order.targetPremium,
+        }
+      ]
     });
 
-    // Target order
-    const targetOrderId = await k.placeOrder('regular', {
-      tradingsymbol: tradingSymbol,
-      exchange: 'NFO',
-      transaction_type: 'SELL',
-      order_type: 'LIMIT',
-      price: order.targetPremium,
-      quantity: qty,
-      product: 'MIS',
-      validity: 'DAY',
-    });
+    const gttId = gttResponse?.data?.trigger_id || gttResponse;
+    console.log('GTT OCO placed:', gttId);
 
     console.log(`\n🟢 LIVE ORDER PLACED:`);
-    console.log(`   Entry  : ${entryOrderId}`);
-    console.log(`   SL     : ${slOrderId}`);
-    console.log(`   Target : ${targetOrderId}\n`);
-
-    const entryId = entryOrderId?.order_id || entryOrderId;
-    const slId = slOrderId?.order_id || slOrderId;
-    const targetId = targetOrderId?.order_id || targetOrderId;
+    console.log(`   Entry  : ${entryId}`);
+    console.log(`   GTT    : ${gttId}\n`);
 
     return {
       orderId: entryId,
-      detail: `Entry ${entryId} | SL ${slId} | Target ${targetId}`,
+      slOrderId: gttId,
+      targetOrderId: gttId,
+      detail: `Entry ${entryId} | GTT OCO ${gttId} (SL ₹${order.slPremium} / Target ₹${order.targetPremium})`,
     };
 
   } catch (err) {
@@ -84,6 +100,29 @@ async function placeOrder(order) {
     }
     throw err;
   }
+}
+
+async function waitForOrderFill(k, orderId, timeoutSeconds) {
+  const maxAttempts = timeoutSeconds / 2;
+  for (let i = 0; i < maxAttempts; i++) {
+    await sleep(2000);
+    try {
+      const orders = await k.getOrders();
+      const order = orders.find(o => o.order_id === String(orderId));
+      if (order?.status === 'COMPLETE') {
+        console.log(`Entry filled after ${(i + 1) * 2}s`);
+        return true;
+      }
+      console.log(`Waiting for fill... ${i + 1}, status: ${order?.status}`);
+    } catch (e) {
+      console.log('Poll error:', e.message);
+    }
+  }
+  return false;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -155,15 +194,33 @@ function buildTradingSymbol(order) {
   return symbol;
 }
 
-async function cancelOrder(orderIdObj) {
+async function cancelOrder(orderData) {
   const k = getKiteClient();
-  // Handle both string and object order IDs
-  const orderId = typeof orderIdObj === 'string'
-    ? orderIdObj
-    : orderIdObj.order_id || JSON.parse(orderIdObj).order_id;
 
-  await k.cancelOrder('regular', orderId);
-  return { detail: `Order ${orderId} cancelled on Zerodha.` };
+  const entryId = orderData.orderId;
+  const gttId   = orderData.slOrderId; // GTT covers both SL and target
+
+  const results = [];
+
+  // Cancel entry order
+  try {
+    await k.cancelOrder('regular', entryId);
+    results.push(`✅ Entry ${entryId} cancelled`);
+  } catch (e) {
+    results.push(`⚠️ Entry cancel: ${e.message}`);
+  }
+
+  // Cancel GTT (cancels both SL and target together)
+  if (gttId) {
+    try {
+      await k.deleteGTT(gttId);
+      results.push(`✅ GTT ${gttId} cancelled (SL + target removed)`);
+    } catch (e) {
+      results.push(`⚠️ GTT cancel: ${e.message}`);
+    }
+  }
+
+  return { detail: results.join('\n') };
 }
 
 async function getOpenPositionsCount() {
