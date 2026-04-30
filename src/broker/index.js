@@ -39,6 +39,23 @@ async function placeOrder(order) {
     const entryId = entryResponse?.order_id || entryResponse;
     console.log('Entry order placed:', entryId);
 
+    // Step 1b — Check if order was immediately rejected
+    await sleep(2000);
+    const allOrders = await k.getOrders();
+    const placed = allOrders.find(o => o.order_id === String(entryId));
+    if (placed?.status === 'REJECTED') {
+      const reason = placed.status_message || placed.status_message_raw || 'Unknown reason';
+      if (
+        reason.toLowerCase().includes('insufficient') ||
+        reason.toLowerCase().includes('margin') ||
+        reason.toLowerCase().includes('funds') ||
+        reason.toLowerCase().includes('balance')
+      ) {
+        throw new Error(`⚠️ INSUFFICIENT FUNDS — Zerodha rejected the order: "${reason}". Trade was NOT placed.`);
+      }
+      throw new Error(`❌ Order REJECTED by Zerodha: "${reason}"`);
+    }
+
     // Step 2 — Wait for entry to fill before placing GTT
     console.log('Waiting for entry to fill...');
     const filled = await waitForOrderFill(k, entryId, 60);
@@ -97,6 +114,14 @@ async function placeOrder(order) {
     }
     if (err.message?.includes('not enabled') || err.message?.includes('segment')) {
       throw new Error('F&O trading not enabled on your Zerodha account. Enable it from Zerodha console.');
+    }
+    if (
+      err.message?.toLowerCase().includes('insufficient') ||
+      err.message?.toLowerCase().includes('margin') ||
+      err.message?.toLowerCase().includes('funds') ||
+      err.message?.toLowerCase().includes('balance')
+    ) {
+      throw new Error('⚠️ INSUFFICIENT FUNDS — Order rejected by Zerodha. Not enough margin in your account. Trade was NOT placed.');
     }
     throw err;
   }

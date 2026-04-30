@@ -27,6 +27,7 @@ const state = {
     tradesTodayCount: 0,
     pendingOrder:     null,
     lastOrderId:      null,
+    blockedToday:     false,   // set true by /notrade
 };
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
@@ -60,6 +61,7 @@ bot.command('start', (ctx) => {
         `*/cancelorder* — cancel last placed Zerodha order`,
         `*/sync*         — sync open positions with Zerodha`,
         `*/resettrades*  — reset daily trade count`,
+        `*/notrade*      — 🚫 block all trading for today`,
     ].join('\n'));
 });
 
@@ -80,6 +82,7 @@ bot.command('status', (ctx) => {
         `Trades taken : ${state.tradesTodayCount} of ${C.MAX_TRADES_PER_DAY}`,
         `Open trades  : ${state.openTradesCount}`,
         `Daily room   : ₹${remaining.toLocaleString('en-IN')} left of ₹${C.DAILY_LOSS_LIMIT.toLocaleString('en-IN')}`,
+        `No-trade mode: ${state.blockedToday ? '🚫 ON — trading blocked' : '✅ OFF'}`,
         ``,
         market.reason,
     ].join('\n'));
@@ -165,17 +168,36 @@ bot.command('sync', async (ctx) => {
 // /resettrades — manually reset daily trade count
 bot.command('resettrades', async (ctx) => {
   const old = state.tradesTodayCount;
+  const wasBlocked = state.blockedToday;
   state.tradesTodayCount = 0;
   state.openTradesCount  = 0;
   state.lastOrderId      = null;
+  state.blockedToday     = false;
   await ctx.replyWithMarkdown([
     `🔄 *Trade Count Reset*`,
     ``,
     `Was: ${old} trades today`,
     `Now: 0 trades today`,
+    ...(wasBlocked ? [`🚫 No-trade block has been lifted.`] : []),
     ``,
     `_Bot ready for fresh trades._`,
   ].join('\n'));
+});
+
+// ─────────────────────────────────────────────────────────────
+// /notrade — block all trading for today
+// ─────────────────────────────────────────────────────────────
+bot.command('notrade', async (ctx) => {
+    state.blockedToday = true;
+    state.pendingOrder = null;
+    await ctx.replyWithMarkdown([
+        `🚫 *No-Trade Mode ACTIVATED*`,
+        ``,
+        `Trading is blocked for the rest of today.`,
+        `No new orders will be accepted.`,
+        ``,
+        `_Use /resettrades to unblock tomorrow._`,
+    ].join('\n'));
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -230,9 +252,10 @@ bot.action('CONFIRM_ORDER', async (ctx) => {
         await ctx.reply('⏳ Placing order...');
         const result = await placeOrder(order);
 
+        // Only increment AFTER confirmed success
         state.tradesTodayCount++;
         state.openTradesCount++;
-        state.lastOrderId = result;
+        state.lastOrderId = result;  // store full result object for cancelorder
 
         await ctx.replyWithMarkdown([
             `✅ *Order Placed* 🟢 Live`,
@@ -249,7 +272,18 @@ bot.action('CONFIRM_ORDER', async (ctx) => {
         ].join('\n'));
 
     } catch (err) {
-        await ctx.replyWithMarkdown(`❌ *Order failed*\n\n${err.message}`);
+        // Order failed — counters were NOT incremented, nothing to roll back
+        const isFunds = err.message?.includes('INSUFFICIENT FUNDS') || err.message?.includes('REJECTED');
+        await ctx.replyWithMarkdown([
+            `❌ *Order Failed — NOT placed on Zerodha*`,
+            ``,
+            `${err.message}`,
+            ...(isFunds ? [
+                ``,
+                `⚠️ *Your trade count has NOT been incremented.*`,
+                `_Check your Zerodha account funds before trying again._`,
+            ] : []),
+        ].join('\n'));
     }
 });
 
@@ -276,6 +310,17 @@ bot.on('text', async (ctx) => {
                 Markup.button.callback('✅ YES — Place order', 'CONFIRM_ORDER'),
                 Markup.button.callback('❌ NO  — Cancel', 'CANCEL_ORDER'),
             ]));
+        return;
+    }
+
+    // ── No-trade block ──
+    if (state.blockedToday) {
+        await ctx.replyWithMarkdown([
+            `🚫 *No-Trade Mode is ON*`,
+            ``,
+            `You set /notrade today. Bot will not accept any trades.`,
+            `_Use /resettrades to unblock._`,
+        ].join('\n'));
         return;
     }
 
