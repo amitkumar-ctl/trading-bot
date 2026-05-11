@@ -185,36 +185,37 @@ async function squareOffAll() {
 
 // Get this week's expiry Thursday
 function getExpiryDate() {
-  // Get current IST time
-  const now = new Date();
-  const ist = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 5.5 * 3600000);
-  const day = ist.getDay(); // 0=Sun, 1=Mon, 2=Tue
+  // Get current time in IST (UTC+5:30)
+  const now    = new Date();
+  const ist    = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 5.5 * 3600000);
+  const day    = ist.getDay(); // 0=Sun, 1=Mon ... 4=Thu
 
   const expiry = new Date(ist);
 
-  // Nifty weekly expiry is every Tuesday
-  // If today is Tuesday → use today
-  // If past Tuesday → find next Tuesday
-  if (day === 2) {
-    // Today is Tuesday — use today
-  } else if (day < 2) {
-    // Sun(0) or Mon(1) → this Tuesday
-    expiry.setDate(ist.getDate() + (2 - day));
+  if (day <= 4) {
+    // Sun-Thu → this Thursday
+    expiry.setDate(ist.getDate() + (4 - day));
   } else {
-    // Wed(3) Thu(4) Fri(5) Sat(6) → next Tuesday
-    expiry.setDate(ist.getDate() + (9 - day));
+    // Fri-Sat → next Thursday
+    expiry.setDate(ist.getDate() + (11 - day));
   }
   return expiry;
 }
 
 function buildTradingSymbol(order) {
   const expiry = getExpiryDate();
-  const year = String(expiry.getFullYear()).slice(2);  // "26"
-  const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-  const month = months[expiry.getMonth()];             // "APR"
+  const year   = String(expiry.getFullYear()).slice(2);      // "25"
+  const month  = expiry.getMonth() + 1;                     // 1-12
+  const day    = String(expiry.getDate()).padStart(2, '0'); // "17"
 
-  // Format: NIFTY26APR24200CE
-  const symbol = `NIFTY${year}${month}${order.strike}${order.optionType}`;
+  // Weekly month codes
+  const monthCode = month === 10 ? 'O'
+                  : month === 11 ? 'N'
+                  : month === 12 ? 'D'
+                  : String(month);  // 1-9 as string
+
+  // Format: NIFTY25417{strike}CE
+  const symbol = `NIFTY${year}${monthCode}${day}${order.strike}${order.optionType}`;
   console.log('Trading symbol:', symbol);
   return symbol;
 }
